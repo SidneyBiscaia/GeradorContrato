@@ -1,74 +1,51 @@
+import streamlit as st
 import pandas as pd
 from docx import Document
-import os
-import streamlit as st
-from tkinter import Tk, filedialog
+import io
 
-def selecionar_arquivo(titulo, tipos):
-    root = Tk()
-    root.withdraw()
-    caminho = filedialog.askopenfilename(title=titulo, filetypes=tipos)
-    root.destroy()
-    return caminho
+st.set_page_config(page_title="Gerador de Contratos", layout="centered")
 
-def preencher_um_contrato(modelo_path, planilha_path):
-    # Lê a planilha Excel
-    df = pd.read_excel(planilha_path, sheet_name=0)
+st.title("📝 Gerador de Contratos Automático")
 
-    # Transforma em dicionário
-    variaveis = pd.Series(df.iloc[:, 1].values, index=df.iloc[:, 0]).to_dict()
+st.write("Faça upload de um modelo Word com variáveis no formato `{variavel}` e de uma planilha Excel com duas colunas: `Variável` e `Valor`.")
 
-    # Carrega o modelo
-    doc = Document(modelo_path)
+# Upload dos arquivos
+modelo_docx = st.file_uploader("📄 Upload do modelo .docx", type=["docx"])
+planilha_excel = st.file_uploader("📊 Upload da planilha .xlsx", type=["xlsx"])
 
-    # Substitui variáveis no texto
-    for paragrafo in doc.paragraphs:
-        for chave, valor in variaveis.items():
-            paragrafo.text = paragrafo.text.replace(f"{{{chave}}}", str(valor))
+if modelo_docx and planilha_excel:
+    try:
+        # Carrega a planilha
+        df = pd.read_excel(planilha_excel, sheet_name=0)
+        variaveis = pd.Series(df["Valor"].values, index=df["Variável"]).to_dict()
 
-    # Substitui variáveis em tabelas também
-    for tabela in doc.tables:
-        for linha in tabela.rows:
-            for celula in linha.cells:
-                for chave, valor in variaveis.items():
-                    celula.text = celula.text.replace(f"{{{chave}}}", str(valor))
+        # Carrega o modelo
+        doc = Document(modelo_docx)
 
-    return doc
+        # Substitui no texto
+        for paragrafo in doc.paragraphs:
+            for chave, valor in variaveis.items():
+                paragrafo.text = paragrafo.text.replace(f"{{{chave}}}", str(valor))
 
-# Interface Streamlit
-st.title("Preenchimento Automático de Contratos")
+        # Substitui nas tabelas
+        for tabela in doc.tables:
+            for linha in tabela.rows:
+                for celula in linha.cells:
+                    for chave, valor in variaveis.items():
+                        celula.text = celula.text.replace(f"{{{chave}}}", str(valor))
 
-st.write(
-    "Este aplicativo permite preencher automaticamente um contrato com base em um modelo Word e uma planilha Excel contendo variáveis e valores."
-)
+        # Prepara para download
+        output = io.BytesIO()
+        doc.save(output)
+        output.seek(0)
 
-modelo_file = st.file_uploader("Escolha o modelo Word com as variáveis", type="docx")
-planilha_file = st.file_uploader("Escolha a planilha Excel com as variáveis e valores", type="xlsx")
+        st.success("✅ Contrato gerado com sucesso!")
+        st.download_button(
+            label="📥 Baixar Contrato Preenchido",
+            data=output,
+            file_name="ContratoPreenchido.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
 
-if modelo_file and planilha_file:
-    st.write("Gerando contrato...")
-    
-    # Salva os arquivos temporários
-    modelo_path = "modelo_temp.docx"
-    planilha_path = "planilha_temp.xlsx"
-    
-    with open(modelo_path, "wb") as f:
-        f.write(modelo_file.getbuffer())
-    
-    with open(planilha_path, "wb") as f:
-        f.write(planilha_file.getbuffer())
-    
-    # Preenche o contrato
-    doc = preencher_um_contrato(modelo_path, planilha_path)
-    
-    # Salva o documento gerado
-    caminho_saida = "contrato_gerado.docx"
-    doc.save(caminho_saida)
-
-    st.write("Contrato gerado com sucesso!")
-    st.download_button(
-        label="Baixar contrato gerado",
-        data=open(caminho_saida, "rb").read(),
-        file_name=caminho_saida,
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
+    except Exception as e:
+        st.error(f"Erro ao processar: {e}")
